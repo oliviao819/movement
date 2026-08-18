@@ -294,6 +294,44 @@ struct Account: Codable, Equatable {
     var contactIsEmail: Bool
     var password: String
     var provider: AuthProvider
+    /// The backend's stable user id (Firebase Auth's `uid`), used as the
+    /// Firestore document key for synced data. Nil for the local fallback,
+    /// which has no server-side identity to key off of.
+    var remoteID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case username, contact, contactIsEmail, password, provider, remoteID
+    }
+
+    init(username: String, contact: String, contactIsEmail: Bool, password: String, provider: AuthProvider, remoteID: String? = nil) {
+        self.username = username
+        self.contact = contact
+        self.contactIsEmail = contactIsEmail
+        self.password = password
+        self.provider = provider
+        self.remoteID = remoteID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        username = try container.decode(String.self, forKey: .username)
+        contact = try container.decode(String.self, forKey: .contact)
+        contactIsEmail = try container.decode(Bool.self, forKey: .contactIsEmail)
+        password = try container.decode(String.self, forKey: .password)
+        provider = try container.decode(AuthProvider.self, forKey: .provider)
+        // Predates remoteID; older saved accounts just decode to nil.
+        remoteID = try container.decodeIfPresent(String.self, forKey: .remoteID)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(username, forKey: .username)
+        try container.encode(contact, forKey: .contact)
+        try container.encode(contactIsEmail, forKey: .contactIsEmail)
+        try container.encode(password, forKey: .password)
+        try container.encode(provider, forKey: .provider)
+        try container.encodeIfPresent(remoteID, forKey: .remoteID)
+    }
 }
 
 /// Validation shared by the sign up form and the store, so the rules ("valid

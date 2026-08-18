@@ -32,6 +32,15 @@ protocol AuthBackend {
     func signInWithGoogle() async throws -> Account
     func signInWithApple() async throws -> Account
     func signOut()
+
+    /// Sends a password reset email to `contact`. Throws if the backend can't
+    /// do this offline (the local fallback) or the send fails.
+    func sendPasswordReset(contact: String) async throws
+
+    /// Permanently deletes `account` from the backend. Apple requires that
+    /// any app with account creation also offer in-app account deletion
+    /// (App Review Guideline 5.1.1(v)).
+    func deleteAccount(_ account: Account) async throws
 }
 
 /// Picks the real backend when Firebase is linked, otherwise the local one.
@@ -128,4 +137,14 @@ final class LocalAuthBackend: AuthBackend {
     }
 
     func signOut() {}
+
+    func sendPasswordReset(contact: String) async throws {
+        throw AuthError(message: "Password reset needs the real backend — see FIREBASE_SETUP.md.")
+    }
+
+    func deleteAccount(_ account: Account) async throws {
+        var accounts = loadAccounts()
+        accounts.removeAll { $0.contact.lowercased() == account.contact.lowercased() && $0.username.lowercased() == account.username.lowercased() }
+        persist(accounts)
+    }
 }
