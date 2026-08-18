@@ -107,6 +107,9 @@ struct AuthView: View {
     @State private var revealPassword = false
     @State private var errorMessage: String?
     @State private var isWorking = false
+    @State private var isResettingPassword = false
+    @State private var resetEmail = ""
+    @State private var resetMessage: String?
 
     var body: some View {
         let palette = store.palette(system: systemScheme)
@@ -164,6 +167,26 @@ struct AuthView: View {
             .padding(24)
         }
         .background(palette.background.ignoresSafeArea())
+        .alert("Reset password", isPresented: $isResettingPassword) {
+            TextField("you@example.com", text: $resetEmail)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Send reset email") {
+                Task {
+                    let error = await store.sendPasswordReset(contact: resetEmail)
+                    resetMessage = error ?? "If that email has an account, a reset link is on its way."
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Enter the email address you signed up with.")
+        }
+        .alert("", isPresented: Binding(get: { resetMessage != nil }, set: { if !$0 { resetMessage = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(resetMessage ?? "")
+        }
     }
 
     // MARK: - Fields
@@ -199,6 +222,13 @@ struct AuthView: View {
             fieldLabel("Password", palette: palette)
             passwordField(palette, placeholder: "Enter your password")
         }
+        Button("Forgot password?") {
+            resetEmail = identifier
+            resetMessage = nil
+            isResettingPassword = true
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(palette.strong)
     }
 
     @ViewBuilder
@@ -1524,6 +1554,10 @@ struct PoseFigure: View {
 struct SettingsView: View {
     @EnvironmentObject private var store: MovementStore
     @Environment(\.colorScheme) private var systemScheme
+    @Environment(\.dismiss) private var dismiss
+    @State private var isConfirmingDelete = false
+    @State private var isDeletingAccount = false
+    @State private var deleteError: String?
 
     var body: some View {
         let palette = store.palette(system: systemScheme)
@@ -1593,10 +1627,51 @@ struct SettingsView: View {
                         store.resetOnboarding()
                     }
                 }
+
+                if store.account != nil {
+                    Section {
+                        Button(role: .destructive) {
+                            isConfirmingDelete = true
+                        } label: {
+                            if isDeletingAccount {
+                                ProgressView()
+                            } else {
+                                Text("Delete Account")
+                            }
+                        }
+                        .disabled(isDeletingAccount)
+                    } footer: {
+                        Text("Permanently deletes your account and all synced progress. This can't be undone.")
+                    }
+                }
             }
             .scrollContentBackground(.hidden)
             .background(palette.background)
             .navigationTitle("Settings")
+            .confirmationDialog(
+                "Delete your account? This permanently removes your account and all synced progress — it can't be undone.",
+                isPresented: $isConfirmingDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Account", role: .destructive) {
+                    Task {
+                        isDeletingAccount = true
+                        let error = await store.deleteAccount()
+                        isDeletingAccount = false
+                        if let error {
+                            deleteError = error
+                        } else {
+                            dismiss()
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            .alert("Couldn't delete account", isPresented: Binding(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })) {
+                Button("OK") {}
+            } message: {
+                Text(deleteError ?? "")
+            }
         }
         // The settings sheet is its own presentation, so it needs the forced
         // scheme applied here too — otherwise switching to Dark from a Light

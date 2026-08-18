@@ -45,7 +45,7 @@ final class FirebaseAuthBackend: NSObject, AuthBackend {
             username = contact.isEmpty ? "\(provider.label) member" : contact
         }
         // Never persist a real password on device; the backend owns the session.
-        return Account(username: username, contact: contact, contactIsEmail: user.email != nil, password: "", provider: provider)
+        return Account(username: username, contact: contact, contactIsEmail: user.email != nil, password: "", provider: provider, remoteID: user.uid)
     }
 
     // MARK: - Email / password
@@ -155,6 +155,33 @@ final class FirebaseAuthBackend: NSObject, AuthBackend {
         #if canImport(GoogleSignIn)
         GIDSignIn.sharedInstance.signOut()
         #endif
+    }
+
+    func sendPasswordReset(contact: String) async throws {
+        let email = contact.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard AuthValidator.isEmail(email) else {
+            throw AuthError(message: "Enter the email address you signed up with.")
+        }
+        do {
+            try await Auth.auth().sendPasswordReset(withEmail: email)
+        } catch {
+            throw AuthError(message: error.localizedDescription)
+        }
+    }
+
+    // MARK: - Account deletion
+
+    func deleteAccount(_ account: Account) async throws {
+        guard let user = Auth.auth().currentUser else {
+            throw AuthError(message: "You're not signed in.")
+        }
+        do {
+            try await user.delete()
+        } catch let error as NSError where error.code == AuthErrorCode.requiresRecentLogin.rawValue {
+            throw AuthError(message: "For your security, please log out, log back in, then delete your account again.")
+        } catch {
+            throw AuthError(message: error.localizedDescription)
+        }
     }
 
     // MARK: - Helpers

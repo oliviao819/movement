@@ -28,6 +28,10 @@ final class MovementStore: ObservableObject {
     /// linked, otherwise the offline local fallback (see AuthService.swift).
     private let authBackend: AuthBackend = AuthBackendFactory.make()
 
+    /// Where cross-device sync happens — Firestore when linked, otherwise a
+    /// no-op that leaves progress device-only (see FirestoreSyncService.swift).
+    private let syncBackend: SyncBackend = SyncBackendFactory.make()
+
     /// Whether the app is talking to a real remote backend (Firebase) rather
     /// than the local fallback. Surfaced so the UI can note the mode.
     var usesRemoteBackend: Bool { authBackend.isRemote }
@@ -46,6 +50,13 @@ final class MovementStore: ObservableObject {
             } else {
                 isAuthenticated = false
             }
+        }
+
+        if isAuthenticated, let uid = account?.remoteID {
+            Task { await syncFromRemote(uid: uid) }
+        }
+        if remindersEnabled {
+            NotificationScheduler.scheduleDailyReminder()
         }
     }
 
@@ -88,6 +99,40 @@ final class MovementStore: ObservableObject {
         save()
     }
 
+    /// Sends a password reset email. Returns an error message, or nil on
+    /// success (the member checks their email to finish resetting it).
+    func sendPasswordReset(contact: String) async -> String? {
+        do {
+            try await authBackend.sendPasswordReset(contact: contact)
+            return nil
+        } catch let error as AuthError {
+            return error.message
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Permanently deletes the signed-in member's account and all synced
+    /// data. Returns an error message, or nil on success (the session is now
+    /// over and onboarding has been reset).
+    func deleteAccount() async -> String? {
+        guard let account else { return "You're not signed in." }
+        do {
+            if let uid = account.remoteID {
+                try await syncBackend.deleteState(uid: uid)
+            }
+            try await authBackend.deleteAccount(account)
+            self.account = nil
+            isAuthenticated = false
+            resetOnboarding()
+            return nil
+        } catch let error as AuthError {
+            return error.message
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     /// Runs an auth action, storing the resulting account and activating the
     /// session on success, or returning the error's message on failure.
     private func run(_ action: () async throws -> Account) async -> String? {
@@ -95,13 +140,69 @@ final class MovementStore: ObservableObject {
             let account = try await action()
             self.account = account
             isAuthenticated = true
-            save()
+            // Reconcile with Firestore *before* the generic save() below runs
+            // (which would otherwise push this device's pre-login local state
+            // and clobber whatever progress already exists remotely).
+            if let uid = account.remoteID {
+                await syncFromRemote(uid: uid)
+            } else {
+                save()
+            }
             return nil
         } catch let error as AuthError {
             return error.message
         } catch {
             return error.localizedDescription
         }
+    }
+
+    /// Reconciles local state with the member's synced state on Firestore:
+    /// an existing remote document wins (this device adopts the account's
+    /// progress from elsewhere); otherwise this device's current state is
+    /// the first to sync, so it's pushed up as the starting point.
+    private func syncFromRemote(uid: String) async {
+        do {
+            if let remote = try await syncBackend.fetchState(uid: uid) {
+                apply(remote)
+            } else {
+                try await syncBackend.saveState(currentSyncedState(), uid: uid)
+            }
+        } catch {
+            // Sync is best-effort — the member keeps using their local data
+            // if the network or Firestore is unavailable.
+        }
+        // Persists locally either way; if a remote doc existed this also
+        // mirrors it straight back up via save()'s own sync push, which is
+        // redundant but harmless (same data, idempotent write).
+        save()
+    }
+
+    private func apply(_ remote: SyncedState) {
+        profile = remote.profile
+        theme = remote.theme
+        aesthetic = remote.aesthetic
+        appearance = remote.appearance
+        remindersEnabled = remote.remindersEnabled
+        lenientStreaks = remote.lenientStreaks
+        weekStartKey = remote.weekStartKey
+        weeklyCompletionsByDay = remote.weeklyCompletionsByDay
+        completionDates = Set(remote.completionDates)
+        completionLog = remote.completionLog
+    }
+
+    private func currentSyncedState() -> SyncedState {
+        SyncedState(
+            profile: profile,
+            theme: theme,
+            aesthetic: aesthetic,
+            appearance: appearance,
+            remindersEnabled: remindersEnabled,
+            lenientStreaks: lenientStreaks,
+            weekStartKey: weekStartKey,
+            weeklyCompletionsByDay: weeklyCompletionsByDay,
+            completionDates: Array(completionDates),
+            completionLog: completionLog
+        )
     }
 
     func saveProfile(_ profile: Profile) {
@@ -162,6 +263,12 @@ final class MovementStore: ObservableObject {
 
     func setReminders(_ enabled: Bool) {
         remindersEnabled = enabled
+        if enabled {
+            NotificationScheduler.requestAuthorizationIfNeeded()
+            NotificationScheduler.scheduleDailyReminder()
+        } else {
+            NotificationScheduler.cancelReminders()
+        }
         save()
     }
 
@@ -323,6 +430,14 @@ final class MovementStore: ObservableObject {
         let saved = SavedState(profile: profile, account: account, isAuthenticated: isAuthenticated, theme: theme, aesthetic: aesthetic, appearance: appearance, remindersEnabled: remindersEnabled, lenientStreaks: lenientStreaks, weekStartKey: weekStartKey, weeklyCompletionsByDay: weeklyCompletionsByDay, completionDates: Array(completionDates), completionLog: completionLog)
         guard let data = try? JSONEncoder().encode(saved) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
+
+        // Mirror every local save to Firestore in the background so progress
+        // survives a reinstall or shows up on another device. Best-effort:
+        // failures here don't block or roll back the local save.
+        if isAuthenticated, authBackend.isRemote, let uid = account?.remoteID {
+            let snapshot = currentSyncedState()
+            Task { try? await syncBackend.saveState(snapshot, uid: uid) }
+        }
     }
 }
 
