@@ -248,7 +248,21 @@ struct Profile: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         name = try container.decode(String.self, forKey: .name)
-        birthday = try container.decodeIfPresent(Date.self, forKey: .birthday) ?? Date.distantPast
+        // Date.distantPast used to be the fallback here, but its Unix
+        // timestamp (-62135769600) falls just outside the range Firestore's
+        // Timestamp type accepts (seconds must be >= -62135596800, midnight
+        // 1/1/1), which crashes the app the moment the profile gets synced.
+        // Some devices already persisted that bad value locally before this
+        // was fixed, so a missing field isn't the only case to guard against
+        // — an already-decoded-but-invalid date needs to be caught too.
+        let fallbackBirthday = Calendar.current.date(byAdding: .year, value: -25, to: Date()) ?? Date()
+        let firestoreMinimumTimestamp: TimeInterval = -62135596800
+        let decodedBirthday = try container.decodeIfPresent(Date.self, forKey: .birthday)
+        if let decodedBirthday, decodedBirthday.timeIntervalSince1970 >= firestoreMinimumTimestamp {
+            birthday = decodedBirthday
+        } else {
+            birthday = fallbackBirthday
+        }
         gender = try container.decode(Gender.self, forKey: .gender)
         goals = try container.decode([Goal].self, forKey: .goals)
         experience = try container.decode(Experience.self, forKey: .experience)
