@@ -429,29 +429,71 @@ struct OnboardingView: View {
     }
 }
 
+/// One of the four color regions of Google's official "G" mark, traced from
+/// the same 48x48 vector path Google ships as `ic_googleg` — not an
+/// approximation, so it reproduces the logo's actual silhouette (including
+/// the notch cut into the ring that forms the crossbar) rather than a
+/// stroked-ring guess at the shape.
+private struct GoogleGMarkSegment: Shape {
+    enum Region { case blue, green, yellow, red }
+    let segment: Region
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        switch segment {
+        case .blue:
+            path.move(to: CGPoint(x: 45.12, y: 24.5))
+            path.addCurve(to: CGPoint(x: 44.72, y: 20.0), control1: CGPoint(x: 45.12, y: 22.94), control2: CGPoint(x: 44.98, y: 21.44))
+            path.addLine(to: CGPoint(x: 24, y: 20.0))
+            path.addLine(to: CGPoint(x: 24, y: 28.51))
+            path.addLine(to: CGPoint(x: 35.84, y: 28.51))
+            path.addCurve(to: CGPoint(x: 31.45, y: 35.15), control1: CGPoint(x: 35.33, y: 31.26), control2: CGPoint(x: 33.78, y: 33.59))
+            path.addLine(to: CGPoint(x: 31.45, y: 40.67))
+            path.addLine(to: CGPoint(x: 38.56, y: 40.67))
+            path.addCurve(to: CGPoint(x: 45.12, y: 24.5), control1: CGPoint(x: 42.72, y: 36.84), control2: CGPoint(x: 45.12, y: 31.2))
+        case .green:
+            path.move(to: CGPoint(x: 24, y: 46))
+            path.addCurve(to: CGPoint(x: 38.56, y: 40.67), control1: CGPoint(x: 29.94, y: 46), control2: CGPoint(x: 34.92, y: 44.03))
+            path.addLine(to: CGPoint(x: 31.45, y: 35.15))
+            path.addCurve(to: CGPoint(x: 24.0, y: 37.26), control1: CGPoint(x: 29.48, y: 36.47), control2: CGPoint(x: 26.96, y: 37.26))
+            path.addCurve(to: CGPoint(x: 11.69, y: 28.2), control1: CGPoint(x: 18.27, y: 37.26), control2: CGPoint(x: 13.42, y: 33.4))
+            path.addLine(to: CGPoint(x: 4.34, y: 28.2))
+            path.addLine(to: CGPoint(x: 4.34, y: 33.9))
+            path.addCurve(to: CGPoint(x: 24, y: 46), control1: CGPoint(x: 7.94, y: 41.26), control2: CGPoint(x: 15.34, y: 46))
+        case .yellow:
+            path.move(to: CGPoint(x: 11.69, y: 28.2))
+            path.addCurve(to: CGPoint(x: 11.07, y: 24.43), control1: CGPoint(x: 11.29, y: 27.01), control2: CGPoint(x: 11.07, y: 25.74))
+            path.addCurve(to: CGPoint(x: 11.69, y: 20.66), control1: CGPoint(x: 11.07, y: 23.12), control2: CGPoint(x: 11.29, y: 21.85))
+            path.addLine(to: CGPoint(x: 11.69, y: 14.96))
+            path.addLine(to: CGPoint(x: 4.34, y: 14.96))
+            path.addCurve(to: CGPoint(x: 2, y: 24), control1: CGPoint(x: 2.85, y: 17.87), control2: CGPoint(x: 2, y: 20.86))
+            path.addCurve(to: CGPoint(x: 4.34, y: 32.94), control1: CGPoint(x: 2, y: 27.14), control2: CGPoint(x: 2.85, y: 30.13))
+            path.addLine(to: CGPoint(x: 11.69, y: 28.2))
+        case .red:
+            path.move(to: CGPoint(x: 24, y: 10.75))
+            path.addCurve(to: CGPoint(x: 32.41, y: 14.04), control1: CGPoint(x: 27.23, y: 10.75), control2: CGPoint(x: 30.13, y: 11.86))
+            path.addLine(to: CGPoint(x: 38.72, y: 7.73))
+            path.addCurve(to: CGPoint(x: 24, y: 2), control1: CGPoint(x: 34.91, y: 4.18), control2: CGPoint(x: 29.93, y: 2))
+            path.addCurve(to: CGPoint(x: 4.34, y: 15.06), control1: CGPoint(x: 15.34, y: 2), control2: CGPoint(x: 7.94, y: 6.74))
+            path.addLine(to: CGPoint(x: 11.69, y: 20.66))
+            path.addCurve(to: CGPoint(x: 24.0, y: 10.75), control1: CGPoint(x: 13.42, y: 15.56), control2: CGPoint(x: 18.27, y: 10.75))
+        }
+        path.closeSubpath()
+        let scale = rect.width / 48
+        return path.applying(CGAffineTransform(scaleX: scale, y: scale))
+    }
+}
+
 private struct GoogleGLogo: View {
     var body: some View {
-        Text("G")
-            .font(.system(size: 20, weight: .black, design: .rounded))
-            .overlay {
-                AngularGradient(
-                    colors: [
-                        Color(hex: 0x4285F4),
-                        Color(hex: 0x34A853),
-                        Color(hex: 0xFBBC05),
-                        Color(hex: 0xEA4335),
-                        Color(hex: 0x4285F4)
-                    ],
-                    center: .center
-                )
-                .mask(
-                    Text("G")
-                        .font(.system(size: 20, weight: .black, design: .rounded))
-                )
-            }
-            .foregroundStyle(.clear)
-            .frame(width: 22, height: 22)
-            .accessibilityHidden(true)
+        ZStack {
+            GoogleGMarkSegment(segment: .blue).fill(Color(hex: 0x4285F4))
+            GoogleGMarkSegment(segment: .green).fill(Color(hex: 0x34A853))
+            GoogleGMarkSegment(segment: .yellow).fill(Color(hex: 0xFBBC05))
+            GoogleGMarkSegment(segment: .red).fill(Color(hex: 0xEA4335))
+        }
+        .frame(width: 20, height: 20)
+        .accessibilityHidden(true)
     }
 }
 
