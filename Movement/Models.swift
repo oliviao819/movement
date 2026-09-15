@@ -326,6 +326,46 @@ struct Account: Codable, Equatable {
         self.remoteID = remoteID
     }
 
+    /// Stable identity for *which member* this is, used to scope on-device
+    /// state so one member's profile and progress can never surface under
+    /// someone else's login. Prefers the backend's uid (the same key the
+    /// Firestore document uses); falls back to the contact, then the
+    /// username, for the offline local backend which has no server identity.
+    var identityKey: String {
+        if let remoteID, !remoteID.isEmpty { return "uid:\(remoteID)" }
+        let contactKey = contact.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !contactKey.isEmpty { return "contact:\(contactKey)" }
+        return "username:\(username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+    }
+
+    /// Placeholder usernames the backends generate when a provider gives us
+    /// no display name at all. They're not real names, so they shouldn't be
+    /// used to greet anyone.
+    private static let placeholderNames: Set<String> = [
+        "Google member", "Apple member", "Email member", "Phone member"
+    ]
+
+    /// The best human-readable name we have for this member, derived from the
+    /// account itself: their chosen username, or — when the provider only
+    /// handed us an email (Google/Apple accounts with no display name) — the
+    /// readable part of that address. Empty when we genuinely don't know.
+    var memberName: String {
+        let trimmed = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty, !trimmed.contains("@"), !Self.placeholderNames.contains(trimmed) {
+            return trimmed
+        }
+        let emailSource = trimmed.contains("@") ? trimmed : contact.trimmingCharacters(in: .whitespacesAndNewlines)
+        if emailSource.contains("@"), let localPart = emailSource.split(separator: "@").first {
+            let spaced = localPart
+                .replacingOccurrences(of: ".", with: " ")
+                .replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: "-", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !spaced.isEmpty { return spaced.capitalized }
+        }
+        return trimmed
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         username = try container.decode(String.self, forKey: .username)

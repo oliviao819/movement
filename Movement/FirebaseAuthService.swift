@@ -72,7 +72,17 @@ final class FirebaseAuthBackend: NSObject, AuthBackend {
             let change = result.user.createProfileChangeRequest()
             change.displayName = cleanUsername
             try await change.commitChanges()
-            return Account(username: cleanUsername, contact: cleanContact, contactIsEmail: true, password: "", provider: .email)
+            // `remoteID` has to carry the uid here: it's the Firestore document
+            // key, so without it a brand-new account never syncs anything and
+            // comes back nameless on the next sign in.
+            return Account(
+                username: cleanUsername,
+                contact: cleanContact,
+                contactIsEmail: true,
+                password: "",
+                provider: .email,
+                remoteID: result.user.uid
+            )
         } catch {
             throw AuthError(message: error.localizedDescription)
         }
@@ -251,13 +261,24 @@ extension FirebaseAuthBackend: ASAuthorizationControllerDelegate, ASAuthorizatio
         Task {
             do {
                 let result = try await Auth.auth().signIn(with: firebaseCredential)
+                var account = Self.account(from: result.user)
                 // Apple only sends the name on first sign-up; capture it if present.
                 if let full = credential.fullName, full.givenName != nil {
-                    let change = result.user.createProfileChangeRequest()
-                    change.displayName = [full.givenName, full.familyName].compactMap { $0 }.joined(separator: " ")
-                    try? await change.commitChanges()
+                    let appleName = [full.givenName, full.familyName]
+                        .compactMap { $0 }
+                        .joined(separator: " ")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !appleName.isEmpty {
+                        let change = result.user.createProfileChangeRequest()
+                        change.displayName = appleName
+                        try? await change.commitChanges()
+                        // Use the name we just set rather than re-reading the
+                        // user object, whose cached displayName may still be
+                        // the pre-commit value.
+                        account.username = appleName
+                    }
                 }
-                continuation?.resume(returning: Self.account(from: result.user))
+                continuation?.resume(returning: account)
             } catch {
                 continuation?.resume(throwing: AuthError(message: error.localizedDescription))
             }
