@@ -415,8 +415,11 @@ struct OnboardingView: View {
                 Section {
                     Button("Create my plan") {
                         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        // Left blank, fall back to the name on their account
+                        // rather than labelling them "Friend".
+                        let resolvedName = cleanName.isEmpty ? store.memberDisplayName : cleanName
                         let orderedGoals = Goal.allCases.filter { goals.contains($0) }
-                        store.saveProfile(Profile(name: cleanName.isEmpty ? "Friend" : cleanName, birthday: birthday, gender: gender, goals: orderedGoals, experience: experience))
+                        store.saveProfile(Profile(name: resolvedName, birthday: birthday, gender: gender, goals: orderedGoals, experience: experience))
                     }
                     .font(.headline)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -425,6 +428,13 @@ struct OnboardingView: View {
             .scrollContentBackground(.hidden)
             .background(palette.background)
             .navigationTitle("Personalize Movement")
+            .onAppear {
+                // Start from the name on their account so the app greets them
+                // correctly by default; they can still change it here.
+                if name.isEmpty, let accountName = store.account?.memberName, !accountName.isEmpty {
+                    name = accountName
+                }
+            }
         }
     }
 }
@@ -580,7 +590,7 @@ struct DashboardView: View {
 
     var body: some View {
         let palette = store.palette(system: systemScheme)
-        let name = store.profile?.name ?? "Friend"
+        let name = store.memberDisplayName
         // Index by the day of the year (not day of month) so a fresh quote
         // shows every day and the app cycles through the whole list before
         // any repeats, rather than looping the same few every month.

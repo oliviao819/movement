@@ -22,6 +22,11 @@ final class MovementStore: ObservableObject {
     @Published private(set) var completionLog: [CompletionRecord] = []
 
     private let storageKey = "movement-ios-state"
+    /// Per-member archive of on-device state, keyed by `Account.identityKey`.
+    /// Lets this device hold more than one member's data at once so switching
+    /// accounts never shows (or overwrites) the wrong person's profile, and so
+    /// signing back in restores the right one even with no network.
+    private let memberStatesKey = "movement-ios-member-states"
     private let calendar = Calendar.current
 
     /// Where authentication actually happens — Firebase when its SDK is
@@ -45,6 +50,9 @@ final class MovementStore: ObservableObject {
         // could be stale if the session was revoked on the server).
         if authBackend.isRemote {
             if let remote = authBackend.currentAccount() {
+                // The live session decides who we are, so make sure the state
+                // we just loaded actually belongs to them before adopting it.
+                adoptState(for: remote)
                 account = remote
                 isAuthenticated = true
             } else {
@@ -62,6 +70,18 @@ final class MovementStore: ObservableObject {
 
     var hasCompletedOnboarding: Bool {
         profile != nil
+    }
+
+    /// The name to address the member by. Their quiz answer wins, since it's
+    /// what they asked to be called; otherwise we fall back to the name on
+    /// their account rather than a generic "Friend", so a member whose
+    /// profile hasn't synced (or who skipped the name field) still sees
+    /// themselves. "Friend" is only for when we truly have no name at all.
+    var memberDisplayName: String {
+        let profileName = profile?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !profileName.isEmpty { return profileName }
+        let accountName = account?.memberName ?? ""
+        return accountName.isEmpty ? "Friend" : accountName
     }
 
     // MARK: - Authentication
@@ -96,6 +116,9 @@ final class MovementStore: ObservableObject {
     func signOut() {
         authBackend.signOut()
         isAuthenticated = false
+        // save() archives this member's state under their own key, so whoever
+        // signs in next starts from their own data and this member gets theirs
+        // back when they return.
         save()
     }
 
@@ -122,6 +145,7 @@ final class MovementStore: ObservableObject {
                 try await syncBackend.deleteState(uid: uid)
             }
             try await authBackend.deleteAccount(account)
+            forgetArchivedState(for: account)
             self.account = nil
             isAuthenticated = false
             resetOnboarding()
@@ -138,6 +162,10 @@ final class MovementStore: ObservableObject {
     private func run(_ action: () async throws -> Account) async -> String? {
         do {
             let account = try await action()
+            // Swap in whatever this device holds for *this* member before the
+            // session goes live, so we never greet them (or sync to their
+            // account) with the previously signed-in member's profile.
+            adoptState(for: account)
             self.account = account
             isAuthenticated = true
             // Reconcile with Firestore *before* the generic save() below runs
@@ -188,6 +216,73 @@ final class MovementStore: ObservableObject {
         weeklyCompletionsByDay = remote.weeklyCompletionsByDay
         completionDates = Set(remote.completionDates)
         completionLog = remote.completionLog
+    }
+
+    // MARK: - Per-member on-device state
+
+    /// Points the in-memory state at `incoming`'s own data. If the member
+    /// hasn't changed this is a no-op (their session just resumed). If it has,
+    /// the outgoing member's state is archived under their key and `incoming`'s
+    /// archived state — or a clean slate, for someone new to this device — is
+    /// restored. Remote sync still runs afterwards and wins when a Firestore
+    /// document exists.
+    private func adoptState(for incoming: Account) {
+        guard let current = account else {
+            // No account has ever owned this device's state (either a first
+            // sign in or data saved before accounts existed), so it belongs to
+            // whoever is signing in now.
+            return
+        }
+        guard current.identityKey != incoming.identityKey else { return }
+
+        archiveCurrentMemberState()
+        if let archived = loadMemberStates()[incoming.identityKey] {
+            apply(archived)
+        } else {
+            apply(blankState())
+        }
+    }
+
+    /// Snapshots the signed-in member's current state under their identity key.
+    private func archiveCurrentMemberState() {
+        guard let account else { return }
+        var states = loadMemberStates()
+        states[account.identityKey] = currentSyncedState()
+        persistMemberStates(states)
+    }
+
+    private func forgetArchivedState(for account: Account) {
+        var states = loadMemberStates()
+        states.removeValue(forKey: account.identityKey)
+        persistMemberStates(states)
+    }
+
+    private func loadMemberStates() -> [String: SyncedState] {
+        guard let data = UserDefaults.standard.data(forKey: memberStatesKey),
+              let states = try? JSONDecoder().decode([String: SyncedState].self, from: data) else { return [:] }
+        return states
+    }
+
+    private func persistMemberStates(_ states: [String: SyncedState]) {
+        guard let data = try? JSONEncoder().encode(states) else { return }
+        UserDefaults.standard.set(data, forKey: memberStatesKey)
+    }
+
+    /// A fresh, empty state — what a member who has never used this device
+    /// starts from (no profile, so they get their own onboarding quiz).
+    private func blankState() -> SyncedState {
+        SyncedState(
+            profile: nil,
+            theme: theme,
+            aesthetic: aesthetic,
+            appearance: appearance,
+            remindersEnabled: remindersEnabled,
+            lenientStreaks: lenientStreaks,
+            weekStartKey: currentWeekStartKey(),
+            weeklyCompletionsByDay: [:],
+            completionDates: [],
+            completionLog: []
+        )
     }
 
     private func currentSyncedState() -> SyncedState {
@@ -430,6 +525,10 @@ final class MovementStore: ObservableObject {
         let saved = SavedState(profile: profile, account: account, isAuthenticated: isAuthenticated, theme: theme, aesthetic: aesthetic, appearance: appearance, remindersEnabled: remindersEnabled, lenientStreaks: lenientStreaks, weekStartKey: weekStartKey, weeklyCompletionsByDay: weeklyCompletionsByDay, completionDates: Array(completionDates), completionLog: completionLog)
         guard let data = try? JSONEncoder().encode(saved) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
+
+        // Keep this member's per-account archive current too, so it never goes
+        // stale behind the active state and hands back old data on a switch.
+        archiveCurrentMemberState()
 
         // Mirror every local save to Firestore in the background so progress
         // survives a reinstall or shows up on another device. Best-effort:
