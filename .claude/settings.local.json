@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/davidykkim/Downloads/**)",
+      "Bash(python3 -c ' *)",
+      "Bash(cd *)",
+      "Bash(mkdir -p /private/tmp/claude-501/-Users-davidykkim-Desktop----projects-olivia-movement/a02d899f-077f-4aed-98f1-569cd923b396/scratchpad)",
+      "Bash(xcrun simctl *)"
+    ]
+  }
+}
