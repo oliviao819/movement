@@ -878,18 +878,20 @@ struct RollingStreakView: View {
                         .font(.caption.weight(.bold))
                         .textCase(.uppercase)
                         .foregroundStyle(palette.gold)
-                    Text("\(streak.rollingSpan) day roll")
+                    Text("\(streak.currentStreak) day streak")
                         .font(.title2.weight(.black))
                         .foregroundStyle(palette.ink)
                 }
                 Spacer()
-                VStack(alignment: .trailing) {
-                    Text("\(streak.completedDays)")
-                        .font(.title.weight(.black))
-                        .foregroundStyle(palette.ink)
-                    Text("completed")
-                        .font(.caption)
-                        .foregroundStyle(palette.muted)
+                if store.lenientStreaks && streak.currentStreak > 0 && !streak.completedToday {
+                    VStack(alignment: .trailing) {
+                        Text("\(streak.graceRemaining)")
+                            .font(.title.weight(.black))
+                            .foregroundStyle(palette.ink)
+                        Text("grace day\(streak.graceRemaining == 1 ? "" : "s") left")
+                            .font(.caption)
+                            .foregroundStyle(palette.muted)
+                    }
                 }
             }
 
@@ -917,13 +919,31 @@ struct RollingStreakView: View {
     }
 
     private func streakText(_ streak: StreakSnapshot) -> String {
-        if streak.didReset {
-            return "The roll reset after too many missed days. Complete one workout to restart today."
+        let grace = MovementStore.streakGraceDays
+        if streak.currentStreak == 0 {
+            if streak.didReset {
+                return store.lenientStreaks
+                    ? "Your streak ended after more than \(grace) rest days in a row. Complete a workout to start a new one."
+                    : "Your streak ended after a missed day. Complete a workout to start a new one."
+            }
+            return "Complete your first workout to start a streak."
         }
-        if store.lenientStreaks {
-            return "\(streak.missedDays) grace miss\(streak.missedDays == 1 ? "" : "es") used, \(streak.graceRemaining) remaining before reset."
+        if streak.completedToday {
+            return store.lenientStreaks
+                ? "Today counts. You can rest up to \(grace) days in a row without losing your streak."
+                : "Today counts. Strict mode is on, so work out every day to keep it going."
         }
-        return "Strict mode is on. Any missed day ends the roll."
+        if !store.lenientStreaks {
+            return "Strict mode is on. Work out today to keep your streak."
+        }
+        if streak.graceRemaining == 0 {
+            return "You've used your rest days. Work out today to keep your streak."
+        }
+        let restLeft = "\(streak.graceRemaining) day\(streak.graceRemaining == 1 ? "" : "s")"
+        if streak.missedDays == 0 {
+            return "Nice work yesterday. You can rest up to \(restLeft), including today, before your streak ends."
+        }
+        return "\(streak.missedDays) rest day\(streak.missedDays == 1 ? "" : "s") so far. You can rest \(restLeft) more, including today, before your streak ends."
     }
 }
 
@@ -1255,7 +1275,7 @@ struct ProgressStreakView: View {
                         .font(.caption.weight(.bold))
                         .textCase(.uppercase)
                         .foregroundStyle(palette.gold)
-                    Text("\(streak.completedDays) day\(streak.completedDays == 1 ? "" : "s")")
+                    Text("\(streak.currentStreak) day\(streak.currentStreak == 1 ? "" : "s")")
                         .font(.system(size: 30, design: store.aesthetic.headlineDesign).weight(store.aesthetic.headlineWeight))
                         .foregroundStyle(palette.ink)
                 }
@@ -1656,6 +1676,8 @@ struct SettingsView: View {
                 Section {
                     Toggle("Gentle reminders", isOn: Binding(get: { store.remindersEnabled }, set: { store.setReminders($0) }))
                     Toggle("Lenient rolling streak", isOn: Binding(get: { store.lenientStreaks }, set: { store.setLenientStreaks($0) }))
+                } footer: {
+                    Text("Lenient streaks let you rest up to \(MovementStore.streakGraceDays) days in a row between workouts. Turn it off to count only back-to-back days.")
                 }
 
                 Section {

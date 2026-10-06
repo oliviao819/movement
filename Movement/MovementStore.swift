@@ -432,27 +432,57 @@ final class MovementStore: ObservableObject {
         weekDays().filter { completionDates.contains(key(for: $0)) }.count
     }
 
-    func streakSnapshot(today: Date = Date()) -> StreakSnapshot {
-        let allowance = lenientStreaks ? 2 : 0
-        var span = 0
-        var completed = 0
-        var missed = 0
+    /// Rest days allowed in a row between workouts before a streak ends
+    /// (lenient mode). Strict mode allows none.
+    static let streakGraceDays = 2
 
-        for offset in 0..<120 {
-            guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
-            let didComplete = completionDates.contains(key(for: day))
-            if didComplete {
-                completed += 1
-            } else {
-                missed += 1
-                if missed > allowance {
-                    return StreakSnapshot(rollingSpan: span, completedDays: completed, missedDays: missed - 1, graceRemaining: 0, didReset: completed == 0)
-                }
+    /// The member's current streak: workout days chained together, where up
+    /// to `streakGraceDays` rest days in a row between workouts (lenient mode)
+    /// don't break the chain. A streak only exists once a workout is logged,
+    /// and missed days never count toward it. Today never counts as a miss —
+    /// there's still time to work out.
+    func streakSnapshot(today: Date = Date()) -> StreakSnapshot {
+        let allowance = lenientStreaks ? Self.streakGraceDays : 0
+        let todayStart = calendar.startOfDay(for: today)
+        let doneToday = completionDates.contains(key(for: todayStart))
+
+        // Find the most recent workout day, counting rest days since it.
+        var lastWorkout: Date?
+        var daysSinceLast = 0
+        for offset in 0...(allowance + 1) {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart) else { continue }
+            if completionDates.contains(key(for: day)) {
+                lastWorkout = day
+                break
             }
-            span += 1
+            if offset > 0 { daysSinceLast += 1 }
         }
 
-        return StreakSnapshot(rollingSpan: span, completedDays: completed, missedDays: missed, graceRemaining: max(0, allowance - missed), didReset: false)
+        guard let streakEnd = lastWorkout, daysSinceLast <= allowance else {
+            // No workout recent enough to keep a streak alive.
+            return StreakSnapshot(currentStreak: 0, rollingSpan: 0, missedDays: 0, graceRemaining: allowance, completedToday: false, didReset: !completionDates.isEmpty)
+        }
+
+        // Walk backward from the latest workout, chaining earlier workout days
+        // until a gap longer than the grace allowance appears.
+        var streak = 0
+        var streakStart = streakEnd
+        var gap = 0
+        var day = streakEnd
+        while gap <= allowance {
+            if completionDates.contains(key(for: day)) {
+                streak += 1
+                streakStart = day
+                gap = 0
+            } else {
+                gap += 1
+            }
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: day) else { break }
+            day = previous
+        }
+
+        let span = (calendar.dateComponents([.day], from: streakStart, to: streakEnd).day ?? 0) + 1
+        return StreakSnapshot(currentStreak: streak, rollingSpan: span, missedDays: daysSinceLast, graceRemaining: allowance - daysSinceLast, completedToday: doneToday, didReset: false)
     }
 
     func rollingDays(count: Int = 14) -> [Date] {

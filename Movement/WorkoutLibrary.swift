@@ -7,12 +7,12 @@ enum WorkoutLibrary {
             title: "Arms",
             subcategories: [
                 WorkoutSubcategory(id: "forearms", title: "Forearms", workouts: [
-                    workout("wrist-curl-flow", "Wrist Curl Flow", "Arms", "Forearms", "Light dumbbells or water bottles", "Beginner", "Sit tall, rest forearms on thighs, curl wrists upward, lower slowly, and keep the motion controlled.", "Keep wrists smooth and elbows quiet.", .curl),
+                    workout("wrist-curl-flow", "Wrist Curl Flow", "Arms", "Forearms", "Light dumbbells or water bottles", "Beginner", "Sit tall, rest forearms on thighs, curl wrists upward, lower slowly, and keep the motion controlled.", "Keep wrists smooth and elbows quiet.", .wristCurl),
                     workout("farmer-hold", "Farmer Hold", "Arms", "Forearms", "Two dumbbells, bags, or kettlebells", "All levels", "Stand tall with weight in each hand, shoulders relaxed, core braced, and hold without leaning.", "Grow tall through the crown of your head.", .hold)
                 ]),
                 WorkoutSubcategory(id: "biceps", title: "Biceps", workouts: [
                     workout("tempo-curl", "Tempo Curl", "Arms", "Biceps", "Dumbbells or resistance band", "Beginner", "Curl up for two counts, pause, then lower for three counts while keeping elbows close to your sides.", "Lower slower than you lift.", .curl),
-                    workout("hammer-curl", "Hammer Curl", "Arms", "Biceps", "Dumbbells", "Intermediate", "Keep palms facing inward, lift with steady elbows, and stop before your shoulders roll forward.", "Keep the thumb side of each hand facing up.", .curl)
+                    workout("hammer-curl", "Hammer Curl", "Arms", "Biceps", "Dumbbells", "Intermediate", "Keep palms facing inward, lift with steady elbows, and stop before your shoulders roll forward.", "Keep the thumb side of each hand facing up.", .hammerCurl)
                 ]),
                 WorkoutSubcategory(id: "triceps", title: "Triceps", workouts: [
                     workout("bench-dip", "Bench Dip", "Arms", "Triceps", "Stable chair or bench", "Intermediate", "Place hands behind you, bend elbows straight back, lower gently, then press through your palms.", "Keep your chest broad and elbows pointing back.", .dip),
@@ -30,7 +30,7 @@ enum WorkoutLibrary {
                 ]),
                 WorkoutSubcategory(id: "calves", title: "Calves", workouts: [
                     workout("slow-calf-raise", "Slow Calf Raise", "Legs", "Calves", "Wall or chair for balance", "Beginner", "Rise onto the balls of your feet, pause at the top, then lower with control until heels touch down.", "Pause at the top before lowering.", .calfRaise),
-                    workout("single-leg-calf-raise", "Single-Leg Calf Raise", "Legs", "Calves", "Wall or rail", "Intermediate", "Balance on one foot, lift your heel high, pause, and lower slowly without bouncing.", "Keep your hips level as you lift.", .calfRaise)
+                    workout("single-leg-calf-raise", "Single-Leg Calf Raise", "Legs", "Calves", "Wall or rail", "Intermediate", "Balance on one foot, lift your heel high, pause, and lower slowly without bouncing.", "Keep your hips level as you lift.", .singleLegCalfRaise)
                 ]),
                 WorkoutSubcategory(id: "hamstrings", title: "Hamstrings", workouts: [
                     workout("hip-hinge", "Hip Hinge", "Legs", "Hamstrings", "Dumbbells optional", "Beginner", "Soften knees, send hips back, keep your spine long, and stand by squeezing glutes forward.", "Imagine closing a car door with your hips.", .hinge),
