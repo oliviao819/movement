@@ -447,14 +447,17 @@ struct Workout: Identifiable, Hashable {
     let pose: WorkoutPose
 }
 
-enum WorkoutPose: String, Hashable {
+enum WorkoutPose: String, Hashable, CaseIterable {
+    case wristCurl
     case curl
+    case hammerCurl
     case hold
     case dip
     case overheadExtension
     case squat
     case stepUp
     case calfRaise
+    case singleLegCalfRaise
     case hinge
     case bridge
     case pushUp
@@ -476,10 +479,16 @@ struct Prescription {
 }
 
 struct StreakSnapshot {
+    /// Workout days in the current streak (rest days don't count). 0 = no streak.
+    let currentStreak: Int
+    /// Calendar days from the streak's first workout through its latest one.
     let rollingSpan: Int
-    let completedDays: Int
+    /// Rest days since the latest workout, not counting today.
     let missedDays: Int
+    /// Rest days still allowed before the streak ends if today is skipped too.
     let graceRemaining: Int
+    let completedToday: Bool
+    /// True when the member has logged workouts before but the last streak ended.
     let didReset: Bool
 }
 

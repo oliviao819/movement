@@ -24,6 +24,7 @@ Movement/
   NotificationService.swift    Daily local reminder notification scheduling
   WorkoutLibrary.swift         Static catalog of all categories/subcategories/workouts
   WorkoutPlanEngine.swift      Turns a workout + profile into a sets/reps/note prescription
+  PoseAnimation.swift          3D skeleton + per-exercise motion (FK/IK) and the 360° camera for demos
   Views.swift                  All SwiftUI screens (single file, ~1800 lines)
 firestore.rules                Firestore security rules (per-user document isolation)
 firebase.json                 Firebase CLI config (points at firestore.rules)
@@ -69,13 +70,13 @@ It persists everything to `UserDefaults` as one JSON blob (`SavedState`, with ca
 
 - **`WorkoutLibrary`** is a static, hardcoded catalog: 4 top-level categories (Arms, Legs, Upper Body, Full Body), each with subcategories (e.g. Arms → Forearms/Biceps/Triceps; Legs → Quads/Calves/Hamstrings; Upper Body → Chest/Back/Abs; Full Body → Conditioning/Mobility), each with 2 individual workouts. Every `Workout` has a name, materials needed, difficulty label, a plain-English explanation, a one-line form cue, and a `WorkoutPose` enum used to drive an illustrated stick-figure demonstration.
 - **`WorkoutPlanEngine.prescription(for:profile:)`** is the personalization logic: it derives sets/reps/coaching note from the member's **primary goal** (first goal picked) and adjusts by **experience level** (beginners get fewer sets and easier reps/durations; advanced members get more sets and harder reps/durations). Plank/hold-type poses always get a duration-based rep scheme regardless of goal. This function is pure (no side effects) and is called both when displaying a workout and when logging a completion.
-- Each workout detail screen includes: a SwiftUI-drawn 360°-ish pose demonstration (`Demonstration360View` / `PoseFigure`), the explanation, materials, difficulty, and the quiz-derived sets/reps.
+- Each workout detail screen includes: an animated 360° demonstration (`Demonstration360View` / `PoseFigure`), the explanation, materials, difficulty, and the quiz-derived sets/reps. `PoseAnimator` (`PoseAnimation.swift`) models each `WorkoutPose` as a jointed 3D skeleton moving through a real rep, with timed stages and a live cue label. Planted hands and feet use two-bone IK, and props (bench, step, chair, dumbbells, mat) are included. `PoseFigure` rotates, projects, and depth-sorts it in a `Canvas`.
 - **Completion is only ever recorded from the workout detail screen** (`MovementStore.complete(_:on:)`), which marks the workout done for the day and appends a `CompletionRecord` snapshotting the sets/reps *as prescribed at that moment* (so history stays accurate even if the member's goals/experience change later and the prescription would now compute differently).
 
 ## Progress tracking & streaks
 
 - **Weekly view:** completions are bucketed per calendar day (`weeklyCompletionsByDay`); the week resets automatically when a new week starts (`rollWeekIfNeeded`), using the calendar's week-of-year boundary.
-- **Rolling streak:** `streakSnapshot()` looks back up to 120 days from today, counting consecutive completion, with an optional "grace" allowance (`lenientStreaks`, default on) of up to 2 missed days before the streak is considered broken/reset. Surfaces completed days, missed days, remaining grace, and whether the streak just reset.
+- **Rolling streak:** `streakSnapshot()` counts workout days chained together back from the most recent workout. It is 0 until a workout is logged, and rest days never add to it. In lenient mode (`lenientStreaks`, default on) up to `MovementStore.streakGraceDays` (2) rest days in a row between workouts keep the chain alive; strict mode allows none. Today never counts as a miss. Surfaces the streak length, rest days since the last workout, grace remaining, whether today is done, and whether a previous streak ended.
 - **"Days tracking":** `daysTracking()` counts whole days from the very first ever logged completion (`trackingStartDate`) through today — a lifetime consistency metric independent of streak grace.
 - **Progress tab:** full completion history (most recent first), a goal summary card, streak visualization, and a week-at-a-glance view.
 

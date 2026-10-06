@@ -878,18 +878,20 @@ struct RollingStreakView: View {
                         .font(.caption.weight(.bold))
                         .textCase(.uppercase)
                         .foregroundStyle(palette.gold)
-                    Text("\(streak.rollingSpan) day roll")
+                    Text("\(streak.currentStreak) day streak")
                         .font(.title2.weight(.black))
                         .foregroundStyle(palette.ink)
                 }
                 Spacer()
-                VStack(alignment: .trailing) {
-                    Text("\(streak.completedDays)")
-                        .font(.title.weight(.black))
-                        .foregroundStyle(palette.ink)
-                    Text("completed")
-                        .font(.caption)
-                        .foregroundStyle(palette.muted)
+                if store.lenientStreaks && streak.currentStreak > 0 && !streak.completedToday {
+                    VStack(alignment: .trailing) {
+                        Text("\(streak.graceRemaining)")
+                            .font(.title.weight(.black))
+                            .foregroundStyle(palette.ink)
+                        Text("grace day\(streak.graceRemaining == 1 ? "" : "s") left")
+                            .font(.caption)
+                            .foregroundStyle(palette.muted)
+                    }
                 }
             }
 
@@ -917,13 +919,31 @@ struct RollingStreakView: View {
     }
 
     private func streakText(_ streak: StreakSnapshot) -> String {
-        if streak.didReset {
-            return "The roll reset after too many missed days. Complete one workout to restart today."
+        let grace = MovementStore.streakGraceDays
+        if streak.currentStreak == 0 {
+            if streak.didReset {
+                return store.lenientStreaks
+                    ? "Your streak ended after more than \(grace) rest days in a row. Complete a workout to start a new one."
+                    : "Your streak ended after a missed day. Complete a workout to start a new one."
+            }
+            return "Complete your first workout to start a streak."
         }
-        if store.lenientStreaks {
-            return "\(streak.missedDays) grace miss\(streak.missedDays == 1 ? "" : "es") used, \(streak.graceRemaining) remaining before reset."
+        if streak.completedToday {
+            return store.lenientStreaks
+                ? "Today counts. You can rest up to \(grace) days in a row without losing your streak."
+                : "Today counts. Strict mode is on, so work out every day to keep it going."
         }
-        return "Strict mode is on. Any missed day ends the roll."
+        if !store.lenientStreaks {
+            return "Strict mode is on. Work out today to keep your streak."
+        }
+        if streak.graceRemaining == 0 {
+            return "You've used your rest days. Work out today to keep your streak."
+        }
+        let restLeft = "\(streak.graceRemaining) day\(streak.graceRemaining == 1 ? "" : "s")"
+        if streak.missedDays == 0 {
+            return "Nice work yesterday. You can rest up to \(restLeft), including today, before your streak ends."
+        }
+        return "\(streak.missedDays) rest day\(streak.missedDays == 1 ? "" : "s") so far. You can rest \(restLeft) more, including today, before your streak ends."
     }
 }
 
@@ -1255,7 +1275,7 @@ struct ProgressStreakView: View {
                         .font(.caption.weight(.bold))
                         .textCase(.uppercase)
                         .foregroundStyle(palette.gold)
-                    Text("\(streak.completedDays) day\(streak.completedDays == 1 ? "" : "s")")
+                    Text("\(streak.currentStreak) day\(streak.currentStreak == 1 ? "" : "s")")
                         .font(.system(size: 30, design: store.aesthetic.headlineDesign).weight(store.aesthetic.headlineWeight))
                         .foregroundStyle(palette.ink)
                 }
@@ -1475,131 +1495,226 @@ struct Demonstration360View: View {
     @EnvironmentObject private var store: MovementStore
     @Environment(\.colorScheme) private var systemScheme
     let workout: Workout
-    @State private var manualRotation: Double = 0
+    @State private var settledRotation: Double = 0
+    @State private var dragRotation: Double = 0
+
+    /// Seconds per automatic full turn — slow enough to follow each rep.
+    private let turnDuration = 16.0
 
     var body: some View {
         let palette = store.palette(system: systemScheme)
 
         TimelineView(.animation) { timeline in
-            let autoRotation = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 8) / 8 * 360
-            let rotation = autoRotation + manualRotation
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            let autoRotation = time.truncatingRemainder(dividingBy: turnDuration) / turnDuration * 360
+            let rotation = autoRotation + settledRotation + dragRotation
+            let degrees = (Int(rotation) % 360 + 360) % 360
+            let frame = PoseAnimator.frame(for: workout.pose, time: time)
 
             ZStack {
                 LinearGradient(colors: [palette.soft, palette.surface], startPoint: .topLeading, endPoint: .bottomTrailing)
                 Circle()
-                    .stroke(palette.gold.opacity(0.28), lineWidth: 10)
+                    .stroke(palette.gold.opacity(0.16), lineWidth: 10)
                     .frame(width: 190, height: 190)
                 Circle()
                     .trim(from: 0, to: 0.82)
-                    .stroke(palette.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .stroke(palette.gold.opacity(0.55), style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .frame(width: 230, height: 230)
                     .rotationEffect(.degrees(rotation))
-                PoseFigure(pose: workout.pose, rotation: rotation)
-                    .frame(width: 180, height: 240)
-                    .rotation3DEffect(.degrees(rotation), axis: (x: 0, y: 1, z: 0), perspective: 0.65)
-                    .shadow(color: palette.strong.opacity(0.2), radius: 18, y: 10)
+                PoseFigure(pose: workout.pose, frame: frame, rotation: rotation)
+                    .padding(.top, 52)
+                    .padding(.bottom, 44)
+                    .padding(.horizontal, 10)
 
-                VStack {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("360 form view")
                             .font(.caption.weight(.bold))
                             .textCase(.uppercase)
                             .foregroundStyle(palette.gold)
                         Spacer()
-                        Text("\(Int(rotation) % 360) deg")
+                        Text("\(degrees) deg")
                             .font(.caption.monospacedDigit().weight(.bold))
                             .foregroundStyle(palette.muted)
                     }
-                    Spacer()
-                    Text(workout.formCue)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(palette.muted)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                    Text(frame.cue)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(palette.ink)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
                         .background(palette.surface.opacity(0.9))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(Capsule())
+                        .animation(.easeInOut(duration: 0.2), value: frame.cue)
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Text(workout.formCue)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(palette.muted)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(palette.surface.opacity(0.9))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        Spacer()
+                    }
                 }
                 .padding(14)
             }
+            .contentShape(Rectangle())
             .gesture(
                 DragGesture()
                     .onChanged { value in
-                        manualRotation = Double(value.translation.width)
+                        dragRotation = Double(value.translation.width) * 0.8
+                    }
+                    .onEnded { value in
+                        settledRotation += Double(value.translation.width) * 0.8
+                        dragRotation = 0
                     }
             )
         }
     }
 }
 
+/// Draws one frame of a workout's motion (from `PoseAnimator`) as a jointed
+/// figure seen from `rotation` degrees. Parts are painted back to front so
+/// limbs on the far side pass behind the body, and far limbs are dimmed to
+/// make left/right easy to tell apart while the figure turns.
 struct PoseFigure: View {
     @EnvironmentObject private var store: MovementStore
     @Environment(\.colorScheme) private var systemScheme
     let pose: WorkoutPose
+    let frame: PoseFrame
     let rotation: Double
+
+    private enum Part {
+        case line([Vec3], width: Double, color: Color)
+        case dot(Vec3, radius: Double, color: Color)
+        /// Drawn on top of the limb it belongs to, sorted at that limb's depth.
+        case overlay([Vec3], width: Double, color: Color, depth: Double)
+    }
 
     var body: some View {
         let palette = store.palette(system: systemScheme)
-        let limb = limbAngles
 
-        ZStack {
-            Capsule()
-                .fill(palette.strong)
-                .frame(width: 42, height: bodyHeight)
-                .offset(y: 28)
-            Circle()
-                .fill(palette.strong)
-                .frame(width: 44, height: 44)
-                .offset(y: -72)
+        Canvas { context, size in
+            let framing = PoseFraming.of(pose)
+            let camera = PoseCamera(rotation: rotation, framing: framing, width: size.width, height: size.height)
+            func point(_ p: Vec3) -> CGPoint {
+                let projected = camera.project(p)
+                return CGPoint(x: projected.x, y: projected.y)
+            }
+            func polygon(_ corners: [Vec3]) -> Path {
+                var path = Path()
+                path.addLines(corners.map(point))
+                path.closeSubpath()
+                return path
+            }
 
-            limbView(angle: limb.leftArm, length: 74, width: 12)
-                .offset(x: -28, y: -12)
-            limbView(angle: limb.rightArm, length: 74, width: 12)
-                .offset(x: 28, y: -12)
-            limbView(angle: limb.leftLeg, length: 88, width: 14)
-                .offset(x: -14, y: 90)
-            limbView(angle: limb.rightLeg, length: 88, width: 14)
-                .offset(x: 14, y: 90)
+            context.opacity = frame.opacity
+
+            // Floor shadow and, for floor work, a mat.
+            let floorRadius = max(0.55, framing.radius * 0.85)
+            let floor = (0..<48).map { step -> Vec3 in
+                let angle = Double(step) / 48 * 2 * .pi
+                return Vec3(framing.pivot.x + cos(angle) * floorRadius, 0, framing.pivot.z + sin(angle) * floorRadius)
+            }
+            context.fill(polygon(floor), with: .color(palette.strong.opacity(0.07)))
+            if frame.showsMat {
+                let mat = polygon([
+                    Vec3(-0.4, 0.003, framing.minZ - 0.1), Vec3(0.4, 0.003, framing.minZ - 0.1),
+                    Vec3(0.4, 0.003, framing.maxZ + 0.1), Vec3(-0.4, 0.003, framing.maxZ + 0.1)
+                ])
+                context.fill(mat, with: .color(palette.gold.opacity(0.16)))
+                context.stroke(mat, with: .color(palette.gold.opacity(0.32)), lineWidth: 1)
+            }
+
+            // Contact spots under lifted heels make the gap to the floor easy to see.
+            for heel in frame.skeleton.heel.compactMap({ $0 }) {
+                let spot = (0..<16).map { step -> Vec3 in
+                    let angle = Double(step) / 16 * 2 * .pi
+                    return Vec3(heel.x + cos(angle) * 0.05, 0, heel.z + sin(angle) * 0.035)
+                }
+                context.fill(polygon(spot), with: .color(palette.strong.opacity(0.22)))
+            }
+
+            // Props sit behind the figure so they never hide the movement.
+            for box in frame.boxes {
+                let (a, b) = (box.min, box.max)
+                let faces: [(normal: Vec3, corners: [Vec3])] = [
+                    (Vec3(0, 1, 0), [Vec3(a.x, b.y, a.z), Vec3(b.x, b.y, a.z), Vec3(b.x, b.y, b.z), Vec3(a.x, b.y, b.z)]),
+                    (Vec3(0, 0, 1), [Vec3(a.x, a.y, b.z), Vec3(b.x, a.y, b.z), Vec3(b.x, b.y, b.z), Vec3(a.x, b.y, b.z)]),
+                    (Vec3(0, 0, -1), [Vec3(a.x, a.y, a.z), Vec3(b.x, a.y, a.z), Vec3(b.x, b.y, a.z), Vec3(a.x, b.y, a.z)]),
+                    (Vec3(1, 0, 0), [Vec3(b.x, a.y, a.z), Vec3(b.x, a.y, b.z), Vec3(b.x, b.y, b.z), Vec3(b.x, b.y, a.z)]),
+                    (Vec3(-1, 0, 0), [Vec3(a.x, a.y, a.z), Vec3(a.x, a.y, b.z), Vec3(a.x, b.y, b.z), Vec3(a.x, b.y, a.z)])
+                ]
+                for face in faces where camera.faces(face.normal) {
+                    let path = polygon(face.corners)
+                    context.fill(path, with: .color(palette.muted.opacity(face.normal.y > 0 ? 0.14 : 0.24)))
+                    context.stroke(path, with: .color(palette.muted.opacity(0.45)), lineWidth: 1)
+                }
+            }
+
+            // Body parts, painted far to near.
+            let sk = frame.skeleton
+            let bodyColor = palette.strong
+            var parts: [Part] = [
+                .line([sk.pelvis, sk.spine, sk.chest], width: 0.17, color: bodyColor),
+                .line([sk.chest, sk.neck], width: 0.07, color: bodyColor),
+                .line([sk.shoulder[0], sk.chest, sk.shoulder[1]], width: 0.10, color: bodyColor),
+                .line([sk.hip[0], sk.pelvis, sk.hip[1]], width: 0.12, color: bodyColor),
+                .dot(sk.head, radius: 0.105, color: bodyColor)
+            ]
+            // A small face marker shows which way the figure is facing.
+            let facing = (sk.shoulder[1] - sk.shoulder[0]).cross(sk.head - sk.neck).normalized
+            let face = sk.head + facing * 0.075
+            if camera.project(face).depth > camera.project(sk.head).depth {
+                parts.append(.dot(face, radius: 0.028, color: palette.surface))
+            }
+            let torsoDepth = camera.project(sk.spine).depth
+            for i in 0..<2 {
+                let foot = sk.heel[i].map { [sk.ankle[i], $0, sk.toe[i]] } ?? [sk.ankle[i], sk.toe[i]]
+                for (chain, width) in [([sk.shoulder[i], sk.elbow[i], sk.wrist[i], sk.grip[i]], 0.075), ([sk.hip[i], sk.knee[i]] + foot, 0.095)] {
+                    let depth = chain.map { camera.project($0).depth }.reduce(0, +) / Double(chain.count)
+                    let nearness = min(1, max(0.42, 0.7 + (depth - torsoDepth) * 2.4))
+                    parts.append(.line(chain, width: width, color: palette.primary.opacity(nearness)))
+                    if frame.highlightsCalves && width == 0.095 {
+                        parts.append(.overlay([sk.knee[i], sk.ankle[i]], width: 0.07, color: palette.gold.opacity(max(0.55, nearness)), depth: depth + 1e-4))
+                    }
+                }
+            }
+            for bell in frame.dumbbells {
+                let ink = palette.ink.opacity(0.85)
+                parts.append(.line([bell.center - bell.axis * 0.09, bell.center + bell.axis * 0.09], width: 0.025, color: ink))
+                parts.append(.line([bell.center + bell.axis * 0.075, bell.center + bell.axis * 0.115], width: 0.075, color: ink))
+                parts.append(.line([bell.center - bell.axis * 0.075, bell.center - bell.axis * 0.115], width: 0.075, color: ink))
+            }
+
+            func depth(of part: Part) -> Double {
+                switch part {
+                case .line(let points, _, _):
+                    return points.map { camera.project($0).depth }.reduce(0, +) / Double(points.count)
+                case .dot(let center, _, _):
+                    return camera.project(center).depth
+                case .overlay(_, _, _, let depth):
+                    return depth
+                }
+            }
+
+            for part in parts.sorted(by: { depth(of: $0) < depth(of: $1) }) {
+                switch part {
+                case .line(let points, let width, let color), .overlay(let points, let width, let color, _):
+                    var path = Path()
+                    path.addLines(points.map(point))
+                    let size = points.map { camera.project($0).size }.reduce(0, +) / Double(points.count)
+                    context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width * size, lineCap: .round, lineJoin: .round))
+                case .dot(let center, let radius, let color):
+                    let projected = camera.project(center)
+                    let r = radius * projected.size
+                    context.fill(Path(ellipseIn: CGRect(x: projected.x - r, y: projected.y - r, width: r * 2, height: r * 2)), with: .color(color))
+                }
+            }
         }
-        .scaleEffect(x: max(0.62, abs(cos(rotation * .pi / 180))), y: 1)
-    }
-
-    private var bodyHeight: CGFloat {
-        switch pose {
-        case .plank, .pushUp, .deadBug, .bridge: return 36
-        default: return 92
-        }
-    }
-
-    private var limbAngles: (leftArm: Double, rightArm: Double, leftLeg: Double, rightLeg: Double) {
-        let pulse = sin(rotation * .pi / 60) * 8
-        switch pose {
-        case .curl: return (-38 + pulse, 38 - pulse, -8, 8)
-        case .hold: return (-8, 8, -6, 6)
-        case .dip: return (-62, 62, -18, 18)
-        case .overheadExtension: return (-150 + pulse, 150 - pulse, -6, 6)
-        case .squat: return (-24, 24, -34, 34)
-        case .stepUp: return (-28, 28, -58, 18)
-        case .calfRaise: return (-8, 8, -4, 4)
-        case .hinge: return (-18, 18, -12, 12)
-        case .bridge: return (-74, 74, -68, 68)
-        case .pushUp: return (-72, 72, -72, 72)
-        case .press: return (-138 + pulse, 138 - pulse, -8, 8)
-        case .row: return (-46 + pulse, 46 - pulse, -16, 16)
-        case .fly: return (-82 + pulse, 82 - pulse, -16, 16)
-        case .deadBug: return (-120, 120, -46, 46)
-        case .plank: return (-70, 70, -78, 78)
-        case .march: return (-40, 40, -52 + pulse, 22)
-        case .reach: return (-146, 146, -28, 28)
-        case .stretch: return (-104, 126, -70, 32)
-        case .catCow: return (-48, 48, -48, 48)
-        }
-    }
-
-    private func limbView(angle: Double, length: CGFloat, width: CGFloat) -> some View {
-        Capsule()
-            .fill(store.palette(system: systemScheme).primary)
-            .frame(width: width, height: length)
-            .rotationEffect(.degrees(angle), anchor: .top)
     }
 }
 
@@ -1656,6 +1771,8 @@ struct SettingsView: View {
                 Section {
                     Toggle("Gentle reminders", isOn: Binding(get: { store.remindersEnabled }, set: { store.setReminders($0) }))
                     Toggle("Lenient rolling streak", isOn: Binding(get: { store.lenientStreaks }, set: { store.setLenientStreaks($0) }))
+                } footer: {
+                    Text("Lenient streaks let you rest up to \(MovementStore.streakGraceDays) days in a row between workouts. Turn it off to count only back-to-back days.")
                 }
 
                 Section {
