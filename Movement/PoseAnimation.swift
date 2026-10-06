@@ -104,6 +104,9 @@ struct Skeleton {
     var knee = [Vec3.zero, .zero]
     var ankle = [Vec3.zero, .zero]
     var toe = [Vec3.zero, .zero]
+    /// Only set when the heel itself matters to the move (calf raises), so
+    /// the foot is drawn heel → toe and the heel visibly leaves the floor.
+    var heel: [Vec3?] = [nil, nil]
 
     var allPoints: [Vec3] {
         [pelvis, spine, chest, neck, head] + shoulder + elbow + wrist + grip + hip + knee + ankle + toe
@@ -127,6 +130,7 @@ struct Skeleton {
         m.knee = flip(knee)
         m.ankle = flip(ankle)
         m.toe = flip(toe)
+        m.heel = [heel[1]?.mirroredX(), heel[0]?.mirroredX()]
         return m
     }
 }
@@ -151,6 +155,8 @@ struct PoseFrame {
     var opacity = 1.0
     /// What the figure is doing right now, e.g. "Curl up".
     var cue = ""
+    /// Highlights the calves (the working muscles) in calf raises.
+    var highlightsCalves = false
 
     func mirrored() -> PoseFrame {
         var m = self
@@ -499,24 +505,29 @@ enum PoseAnimator {
     }
 
     private static func calfRaise(_ time: Double, singleLeg: Bool) -> PoseFrame {
-        let rep = Rep(toEnd: 1.0, holdEnd: 0.7, toStart: 1.6, holdStart: 0.4, labels: ["Rise onto the balls of the feet", "Pause at the top", "Lower slowly", "Heels down"])
+        let rep = Rep(toEnd: 1.2, holdEnd: 0.9, toStart: 1.8, holdStart: 0.6, labels: ["Rise onto the balls of the feet", "Pause at the top", "Lower slowly", "Heels down"])
         let (t, cue) = rep.sample(time)
-        var f = PoseFrame(cue: cue)
+        var f = PoseFrame(cue: cue, highlightsCalves: true)
         var sk = Skeleton()
-        let lift = mix(0, 34, t) * .pi / 180
+        // A high, slightly exaggerated heel lift so the rise reads clearly on screen.
+        let lift = mix(0, 62, t)
         let standing = singleLeg ? [1] : [0, 1]
         // The ball of the foot stays planted; the heel and the whole body rise.
         var ankles: [Vec3] = []
+        var heels: [Vec3] = []
         for i in standing {
-            let ball = Vec3(sideSign[i] * (singleLeg ? 0.07 : 0.11), 0.02, 0.13)
-            let offset = Vec3(0, 0.06 * cos(lift) + 0.13 * sin(lift), 0.06 * sin(lift) - 0.13 * cos(lift))
-            ankles.append(ball + offset)
+            let ball = Vec3(sideSign[i] * (singleLeg ? 0.07 : 0.11), 0.02, 0.15)
+            let toAnkle = Mat3.rotX(lift) * Vec3(0, 0.06, -0.15)
+            let toHeel = Mat3.rotX(lift) * Vec3(0, 0.0, -0.20)
+            ankles.append(ball + toAnkle)
+            heels.append(ball + toHeel)
         }
         let base = ankles.reduce(Vec3.zero, +) * (1 / Double(ankles.count))
         let frames = buildTorso(&sk, pelvis: Vec3(singleLeg ? 0.03 : 0, base.y + Body.straightLeg, base.z), pitch: 3)
         for (n, i) in standing.enumerated() {
-            let ball = Vec3(ankles[n].x, 0.02, 0.13)
-            plantLeg(&sk, i, ankle: ankles[n], kneeToward: Vec3(0, 0, 1), footDirection: ball + Vec3(0, 0, 0.03) - ankles[n])
+            let ball = Vec3(ankles[n].x, 0.02, 0.15)
+            plantLeg(&sk, i, ankle: ankles[n], kneeToward: Vec3(0, 0, 1), footDirection: ball + Vec3(0, 0, 0.04) - ankles[n])
+            sk.heel[i] = heels[n]
         }
         if singleLeg {
             poseLeg(&sk, 0, frame: frames.pelvis, flex: 12, knee: 80, ankle: 20)
@@ -524,12 +535,12 @@ enum PoseAnimator {
         // Fingertips rest on a chair back for balance.
         for i in 0..<2 {
             let s = sideSign[i]
-            reachArm(&sk, i, to: Vec3(s * 0.20, 1.03, 0.43), elbowToward: Vec3(s * 0.4, -1, -0.3), handDirection: Vec3(0, -0.3, 1))
+            reachArm(&sk, i, to: Vec3(s * 0.20, 1.03, 0.45), elbowToward: Vec3(s * 0.4, -1, -0.3), handDirection: Vec3(0, -0.3, 1))
         }
         f.skeleton = sk
         f.boxes = [
-            PropBox(min: Vec3(-0.25, 0.45, 0.42), max: Vec3(0.25, 1.0, 0.47)),
-            PropBox(min: Vec3(-0.25, 0.40, 0.42), max: Vec3(0.25, 0.45, 0.88))
+            PropBox(min: Vec3(-0.25, 0.45, 0.44), max: Vec3(0.25, 1.0, 0.49)),
+            PropBox(min: Vec3(-0.25, 0.40, 0.44), max: Vec3(0.25, 0.45, 0.90))
         ]
         return f
     }
