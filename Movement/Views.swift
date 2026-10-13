@@ -1792,6 +1792,12 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Link("Privacy Policy", destination: URL(string: "https://oliviao819.github.io/movement/PRIVACY_POLICY")!)
+                } header: {
+                    Text("About")
+                }
+
+                Section {
                     Button("Reset first-time quiz", role: .destructive) {
                         store.resetOnboarding()
                     }
