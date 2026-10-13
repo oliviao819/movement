@@ -1,6 +1,6 @@
 # Movement Privacy Policy
 
-_Last updated: [9/1/2026]_
+_Last updated: October 13, 2026_
 
 This policy covers the Movement iOS app ("Movement", "the app").
 
@@ -50,7 +50,7 @@ device. These are generated on-device and are not sent from a server.
 
 ## Contact
 
-Questions about this policy can be sent to: [olivia.j.o81908@gmail.com].
+Questions about this policy can be sent to: olivia.j.o81908@gmail.com.
 
 ---
 
