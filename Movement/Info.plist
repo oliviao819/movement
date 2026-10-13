@@ -9,9 +9,11 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.789625778458-jtao7gca5bl69l328s93th6hr89veap3</string>
+				<string>com.googleusercontent.apps.789625778458-74e0vli80jurrtslb4qajvc2echu87sv</string>
 			</array>
 		</dict>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
