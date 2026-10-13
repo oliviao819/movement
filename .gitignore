@@ -10,3 +10,9 @@ xcuserdata/
 # Build products
 build/
 DerivedData/
+
+# Private keys — never commit
+Key_ID
+Key_ID.pub
+*.pem
+*.p8
